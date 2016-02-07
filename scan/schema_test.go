@@ -22,6 +22,19 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestSchemaParser_Issue241(t *testing.T) {
+	scn, err := newAppScanner("../fixtures/goparsing/classification/operations", nil, nil, nil)
+	if assert.NoError(t, err) {
+		swsp, err := scn.Parse()
+		if assert.NoError(t, err) {
+			def, ok := swsp.Definitions["actionParam"]
+			if assert.True(t, ok) {
+				assert.Len(t, def.Properties, 3)
+			}
+		}
+	}
+}
+
 func TestSchemaParser(t *testing.T) {
 	_ = classificationProg
 	schema := noModelDefs["NoModel"]

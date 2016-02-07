@@ -23,6 +23,33 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestParamsParser_Issue241(t *testing.T) {
+	docFile := "../fixtures/goparsing/classification/operations/private_body.go"
+	fileTree, err := goparser.ParseFile(classificationProg.Fset, docFile, nil, goparser.ParseComments)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	sp := newParameterParser(classificationProg)
+	noParamOps := make(map[string]*spec.Operation)
+	err = sp.Parse(fileTree, noParamOps)
+	if err != nil {
+		log.Fatal(err)
+	}
+	assert.Len(t, noParamOps, 1)
+
+	cr, ok := noParamOps["actionParam"]
+	assert.True(t, ok)
+	assert.Len(t, cr.Parameters, 1)
+	param := cr.Parameters[0]
+	assert.Equal(t, param.In, "body")
+	assert.Equal(t, param.Name, "Body")
+	if assert.NotNil(t, param.Schema) {
+		assert.Equal(t, "#/definitions/actionParam", param.Schema.Ref.String())
+		assert.Empty(t, param.Schema.Format)
+	}
+}
+
 func TestParamsParser(t *testing.T) {
 	docFile := "../fixtures/goparsing/classification/operations/noparams.go"
 	fileTree, err := goparser.ParseFile(classificationProg.Fset, docFile, nil, goparser.ParseComments)
