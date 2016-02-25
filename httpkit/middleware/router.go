@@ -19,11 +19,12 @@ import (
 	"regexp"
 	"strings"
 
+	"golang.org/x/net/context"
+
 	"github.com/go-swagger/go-swagger/errors"
 	"github.com/go-swagger/go-swagger/httpkit"
 	"github.com/go-swagger/go-swagger/spec"
 	"github.com/go-swagger/go-swagger/strfmt"
-	"github.com/gorilla/context"
 	"github.com/naoina/denco"
 )
 
@@ -71,7 +72,7 @@ func newRouter(ctx *Context, next http.Handler) http.Handler {
 	}
 
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		defer context.Clear(r)
+
 		// use context to lookup routes
 		if isRoot {
 			if _, ok := ctx.RouteInfo(r); ok {
@@ -170,6 +171,7 @@ type MatchedRoute struct {
 	Params   RouteParams
 	Consumer httpkit.Consumer
 	Producer httpkit.Producer
+	Context  context.Context
 }
 
 func (d *defaultRouter) Lookup(method, path string) (*MatchedRoute, bool) {

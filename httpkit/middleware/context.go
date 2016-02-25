@@ -23,7 +23,8 @@ import (
 	"github.com/go-swagger/go-swagger/httpkit/middleware/untyped"
 	"github.com/go-swagger/go-swagger/spec"
 	"github.com/go-swagger/go-swagger/strfmt"
-	"github.com/gorilla/context"
+	// "github.com/gorilla/context"
+	"golang.org/x/net/context"
 )
 
 // A Builder can create middlewares
@@ -55,10 +56,11 @@ func (fn ResponderFunc) WriteResponse(rw http.ResponseWriter, pr httpkit.Produce
 // Context is a type safe wrapper around an untyped request context
 // used throughout to store request context with the gorilla context module
 type Context struct {
-	spec    *spec.Document
-	api     RoutableAPI
-	router  Router
-	formats strfmt.Registry
+	spec        *spec.Document
+	api         RoutableAPI
+	router      Router
+	formats     strfmt.Registry
+	rootContext context.Context
 }
 
 type routableUntypedAPI struct {
@@ -158,13 +160,13 @@ func (r *routableUntypedAPI) DefaultConsumes() string {
 
 // NewRoutableContext creates a new context for a routable API
 func NewRoutableContext(spec *spec.Document, routableAPI RoutableAPI, routes Router) *Context {
-	ctx := &Context{spec: spec, api: routableAPI}
+	ctx := &Context{spec: spec, api: routableAPI, rootContext: context.TODO()}
 	return ctx
 }
 
 // NewContext creates a new context wrapper
 func NewContext(spec *spec.Document, api *untyped.API, routes Router) *Context {
-	ctx := &Context{spec: spec}
+	ctx := &Context{spec: spec, rootContext: context.TODO()}
 	ctx.api = newRoutableUntypedAPI(spec, api, ctx)
 	return ctx
 }
@@ -212,7 +214,7 @@ func (c *Context) RequiredProduces() []string {
 
 // BindValidRequest binds a params object to a request but only when the request is valid
 // if the request is not valid an error will be returned
-func (c *Context) BindValidRequest(request *http.Request, route *MatchedRoute, binder RequestBinder) error {
+func (c *Context) BindValidRequest(context context.Context, request *http.Request, route *MatchedRoute, binder RequestBinder) error {
 	var res []error
 
 	requestContentType := "*/*"
@@ -252,20 +254,25 @@ func (c *Context) BindValidRequest(request *http.Request, route *MatchedRoute, b
 	return nil
 }
 
+func (c *Context) contentType(ctx context.Context) *contentTypeValue {
+	return ctx.Value(ctxContentType).(*contentTypeValue)
+}
+
+func (c *Context) setContentType(ctx context.Context, value *contentTypeValue) context.Context {
+	return context.WithValue(ctx, ctxContentType, value)
+}
+
 // ContentType gets the parsed value of a content type
-func (c *Context) ContentType(request *http.Request) (string, string, *errors.ParseError) {
-	if v, ok := context.GetOk(request, ctxContentType); ok {
-		if val, ok := v.(*contentTypeValue); ok {
-			return val.MediaType, val.Charset, nil
-		}
+func (c *Context) ContentType(context context.Context, request *http.Request) (string, string, context.Context, *errors.ParseError) {
+	if val := c.contentType(context); val != nil {
+		return val.MediaType, val.Charset, context, nil
 	}
 
 	mt, cs, err := httpkit.ContentType(request.Header, httpkit.IsDelete(request.Method))
 	if err != nil {
-		return "", "", err
+		return "", "", context, err
 	}
-	context.Set(request, ctxContentType, &contentTypeValue{mt, cs})
-	return mt, cs, nil
+	return mt, cs, c.setContentType(context, &contentTypeValue{mt, cs}), nil
 }
 
 // LookupRoute looks a route up and returns true when it is found
@@ -276,35 +283,44 @@ func (c *Context) LookupRoute(request *http.Request) (*MatchedRoute, bool) {
 	return nil, false
 }
 
+func (c *Context) routeInfo(ctx context.Context) *MatchedRoute {
+	return ctx.Value(ctxMatchedRoute).(*MatchedRoute)
+}
+
+func (c *Context) setRouteInfo(ctx context.Context, route *MatchedRoute) context.Context {
+	return context.WithValue(ctx, ctxMatchedRoute, route)
+}
+
 // RouteInfo tries to match a route for this request
-func (c *Context) RouteInfo(request *http.Request) (*MatchedRoute, bool) {
-	if v, ok := context.GetOk(request, ctxMatchedRoute); ok {
-		if val, ok := v.(*MatchedRoute); ok {
-			return val, ok
-		}
+func (c *Context) RouteInfo(context context.Context, request *http.Request) (*MatchedRoute, context.Context, bool) {
+	if val := c.routeInfo(context); val != nil {
+		return val, context, true
 	}
 
 	if route, ok := c.LookupRoute(request); ok {
-		context.Set(request, ctxMatchedRoute, route)
-		return route, ok
+		return route, c.setRouteInfo(context, route), ok
 	}
 
-	return nil, false
+	return nil, context, false
+}
+
+func (c *Context) responseFormat(ctx context.Context) (string, bool) {
+	v, ok := ctx.Value(ctxResponseFormat).(string)
+	return v, ok
+}
+
+func (c *Context) setResponseFormat(ctx context.Context, rf string) context.Context {
+	return context.WithValue(ctx, ctxResponseFormat, rf)
 }
 
 // ResponseFormat negotiates the response content type
-func (c *Context) ResponseFormat(r *http.Request, offers []string) string {
-	if v, ok := context.GetOk(r, ctxResponseFormat); ok {
-		if val, ok := v.(string); ok {
-			return val
-		}
+func (c *Context) ResponseFormat(context context.Context, r *http.Request, offers []string) (string, context.Context) {
+	if val, ok := c.responseFormat(context); ok {
+		return val, context
 	}
 
 	format := NegotiateContentType(r, offers, "")
-	if format != "" {
-		context.Set(r, ctxResponseFormat, format)
-	}
-	return format
+	return format, c.setResponseFormat(context, format)
 }
 
 // AllowedMethods gets the allowed methods for the path of this request
@@ -313,7 +329,7 @@ func (c *Context) AllowedMethods(request *http.Request) []string {
 }
 
 // Authorize authorizes the request
-func (c *Context) Authorize(request *http.Request, route *MatchedRoute) (interface{}, error) {
+func (c *Context) Authorize(context context.Context, request *http.Request, route *MatchedRoute) (interface{}, error) {
 	if len(route.Authenticators) == 0 {
 		return nil, nil
 	}
@@ -334,7 +350,7 @@ func (c *Context) Authorize(request *http.Request, route *MatchedRoute) (interfa
 }
 
 // BindAndValidate binds and validates the request
-func (c *Context) BindAndValidate(request *http.Request, matched *MatchedRoute) (interface{}, error) {
+func (c *Context) BindAndValidate(context context.Context, request *http.Request, matched *MatchedRoute) (interface{}, error) {
 	if v, ok := context.GetOk(request, ctxBoundParams); ok {
 		if val, ok := v.(*validation); ok {
 			if len(val.result) > 0 {

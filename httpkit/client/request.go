@@ -26,6 +26,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-swagger/go-swagger/client"
 	"github.com/go-swagger/go-swagger/httpkit"
@@ -56,6 +57,7 @@ type request struct {
 	pathPattern string
 	method      string
 	writer      client.RequestWriter
+	timeout     *time.Duration
 
 	pathParams map[string]string
 	header     http.Header
@@ -247,5 +249,10 @@ func (r *request) SetFileParam(name string, file *os.File) error {
 // This does not yet serialze the object, this happens as late as possible.
 func (r *request) SetBodyParam(payload interface{}) error {
 	r.payload = payload
+	return nil
+}
+
+func (r *request) SetTimeout(duration *time.Duration) error {
+	r.timeout = duration
 	return nil
 }
