@@ -38,7 +38,7 @@ func TestUniqueOperationNames(t *testing.T) {
 		sp.Paths.Paths["/tasks/{id}"].Put.AddExtension("origName", "updateTask")
 
 		ops := gatherOperations(doc, nil)
-		assert.Len(t, ops, 4)
+		assert.Len(t, ops, 5)
 		_, exists := ops["saveTask"]
 		assert.True(t, exists)
 		_, exists = ops["PutTasksID"]
@@ -56,7 +56,7 @@ func TestEmptyOperationNames(t *testing.T) {
 		sp.Paths.Paths["/tasks/{id}"].Put.AddExtension("origName", "updateTask")
 
 		ops := gatherOperations(doc, nil)
-		assert.Len(t, ops, 4)
+		assert.Len(t, ops, 5)
 		_, exists := ops["PostTasks"]
 		assert.True(t, exists)
 		_, exists = ops["PutTasksID"]
