@@ -13,6 +13,19 @@ consumes:
   - application/json
 
 paths:
+  "/services/{serviceId}/files":
+    post:
+      operationId: CreateServiceFiles
+      consumes:
+        - multipart/form-data
+      parameters:
+        - name: files
+          in: formData
+          required: true
+          type: file
+        - name: optionalFile
+          in: formData
+          type: file
   /tasks:
     get:
       operationId: getTasks
