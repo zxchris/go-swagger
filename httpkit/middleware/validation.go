@@ -27,11 +27,11 @@ import (
 func newValidation(ctx *Context, next http.Handler) http.Handler {
 
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		matched, _ := ctx.RouteInfo(r)
-		_, result := ctx.BindAndValidate(r, matched)
+		matched, pt, _ := ctx.RouteInfo(ctx.Context(rw), r)
+		_, bctx, result := ctx.BindAndValidate(pt, r, matched)
 
 		if result != nil {
-			ctx.Respond(rw, r, matched.Produces, matched, result)
+			ctx.Respond(bctx, rw, r, matched.Produces, matched, result)
 			return
 		}
 
@@ -99,7 +99,7 @@ func (v *validation) parameters() {
 
 func (v *validation) contentType() {
 	if httpkit.CanHaveBody(v.request.Method) {
-		ct, _, err := v.context.ContentType(v.request)
+		ct, _, _, err := v.context.ContentType(v.route.Context, v.request)
 		if err != nil {
 			v.result = append(v.result, err)
 		} else if httpkit.NeedsContentType(v.request.Method) {
@@ -112,7 +112,7 @@ func (v *validation) contentType() {
 }
 
 func (v *validation) responseFormat() {
-	if str := v.context.ResponseFormat(v.request, v.route.Produces); str == "" && httpkit.NeedsContentType(v.request.Method) {
+	if str, _ := v.context.ResponseFormat(v.route.Context, v.request, v.route.Produces); str == "" && httpkit.NeedsContentType(v.request.Method) {
 		v.result = append(v.result, errors.InvalidResponseFormat(v.request.Header.Get(httpkit.HeaderAccept), v.route.Produces))
 	}
 }

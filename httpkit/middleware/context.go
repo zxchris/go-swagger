@@ -23,6 +23,7 @@ import (
 	"github.com/go-swagger/go-swagger/httpkit/middleware/untyped"
 	"github.com/go-swagger/go-swagger/spec"
 	"github.com/go-swagger/go-swagger/strfmt"
+	"github.com/go-swagger/go-swagger/swag"
 	// "github.com/gorilla/context"
 	"golang.org/x/net/context"
 )
@@ -70,7 +71,7 @@ type routableUntypedAPI struct {
 	defaultProduces string
 }
 
-func newRoutableUntypedAPI(spec *spec.Document, api *untyped.API, context *Context) *routableUntypedAPI {
+func newRoutableUntypedAPI(spec *spec.Document, api *untyped.API, ctx *Context) *routableUntypedAPI {
 	var handlers map[string]map[string]http.Handler
 	if spec == nil || api == nil {
 		return nil
@@ -89,13 +90,14 @@ func newRoutableUntypedAPI(spec *spec.Document, api *untyped.API, context *Conte
 				}
 
 				handlers[um][path] = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					// lookup route info in the context
-					route, _ := context.RouteInfo(r)
+					swres := w.(*swresponse)
+					// lookup route info in the ctx
+					route, ct, _ := ctx.RouteInfo(swres.context, r)
 
 					// bind and validate the request using reflection
-					bound, validation := context.BindAndValidate(r, route)
+					bound, bct, validation := ctx.BindAndValidate(ct, r, route)
 					if validation != nil {
-						context.Respond(w, r, route.Produces, route, validation)
+						ctx.Respond(bct, w, r, route.Produces, route, validation)
 						return
 					}
 
@@ -103,16 +105,16 @@ func newRoutableUntypedAPI(spec *spec.Document, api *untyped.API, context *Conte
 					result, err := oh.Handle(bound)
 					if err != nil {
 						// respond with failure
-						context.Respond(w, r, route.Produces, route, err)
+						ctx.Respond(bct, w, r, route.Produces, route, err)
 						return
 					}
 
 					// respond with success
-					context.Respond(w, r, route.Produces, route, result)
+					ctx.Respond(bct, w, r, route.Produces, route, result)
 				})
 
 				if len(schemes) > 0 {
-					handlers[um][path] = newSecureAPI(context, handlers[um][path])
+					handlers[um][path] = newSecureAPI(ctx, handlers[um][path])
 				}
 			}
 		}
@@ -210,6 +212,14 @@ func (c *Context) BasePath() string {
 // RequiredProduces returns the accepted content types for responses
 func (c *Context) RequiredProduces() []string {
 	return c.spec.RequiredProduces()
+}
+
+// Context returns the golang.org/net/context.Context for this request
+func (c *Context) Context(rw http.ResponseWriter) context.Context {
+	if v, ok := rw.(Contexter); ok {
+		return v.Context()
+	}
+	return c.rootContext
 }
 
 // BindValidRequest binds a params object to a request but only when the request is valid
@@ -328,13 +338,22 @@ func (c *Context) AllowedMethods(request *http.Request) []string {
 	return c.router.OtherMethods(request.Method, request.URL.Path)
 }
 
+func (c *Context) securityPrincipal(ctx context.Context) interface{} {
+	return ctx.Value(ctxSecurityPrincipal)
+}
+
+func (c *Context) setSecurityPrincipal(ctx context.Context, value interface{}) context.Context {
+	return context.WithValue(ctx, ctxSecurityPrincipal, value)
+}
+
 // Authorize authorizes the request
-func (c *Context) Authorize(context context.Context, request *http.Request, route *MatchedRoute) (interface{}, error) {
+func (c *Context) Authorize(context context.Context, request *http.Request, route *MatchedRoute) (interface{}, context.Context, error) {
 	if len(route.Authenticators) == 0 {
-		return nil, nil
+		return nil, context, nil
 	}
-	if v, ok := context.GetOk(request, ctxSecurityPrincipal); ok {
-		return v, nil
+
+	if v := c.securityPrincipal(context); v != nil {
+		return v, context, nil
 	}
 
 	for _, authenticator := range route.Authenticators {
@@ -342,40 +361,45 @@ func (c *Context) Authorize(context context.Context, request *http.Request, rout
 		if !applies || err != nil || usr == nil {
 			continue
 		}
-		context.Set(request, ctxSecurityPrincipal, usr)
-		return usr, nil
+		return usr, c.setSecurityPrincipal(context, usr), nil
 	}
 
-	return nil, errors.Unauthenticated("invalid credentials")
+	return nil, context, errors.Unauthenticated("invalid credentials")
+}
+
+func (c *Context) boundParams(ctx context.Context) (*validation, bool) {
+	v, ok := ctx.Value(ctxBoundParams).(*validation)
+	return v, ok && !swag.IsZero(v)
+}
+
+func (c *Context) setBoundParams(ctx context.Context, value *validation) context.Context {
+	return context.WithValue(ctx, ctxBoundParams, value)
 }
 
 // BindAndValidate binds and validates the request
-func (c *Context) BindAndValidate(context context.Context, request *http.Request, matched *MatchedRoute) (interface{}, error) {
-	if v, ok := context.GetOk(request, ctxBoundParams); ok {
-		if val, ok := v.(*validation); ok {
-			if len(val.result) > 0 {
-				return val.bound, errors.CompositeValidationError(val.result...)
-			}
-			return val.bound, nil
+func (c *Context) BindAndValidate(context context.Context, request *http.Request, matched *MatchedRoute) (interface{}, context.Context, error) {
+	if val, ok := c.boundParams(context); ok {
+		if len(val.result) > 0 {
+			return nil, context, errors.CompositeValidationError(val.result...)
 		}
+		return val.bound, context, nil
 	}
+
 	result := validateRequest(c, request, matched)
-	if result != nil {
-		context.Set(request, ctxBoundParams, result)
-	}
+	nctx := c.setBoundParams(context, result)
 	if len(result.result) > 0 {
-		return result.bound, errors.CompositeValidationError(result.result...)
+		return nil, nctx, errors.CompositeValidationError(result.result...)
 	}
-	return result.bound, nil
+	return result.bound, nctx, nil
 }
 
 // NotFound the default not found responder for when no route has been matched yet
-func (c *Context) NotFound(rw http.ResponseWriter, r *http.Request) {
-	c.Respond(rw, r, []string{c.api.DefaultProduces()}, nil, errors.NotFound("not found"))
+func (c *Context) NotFound(ctx context.Context, rw http.ResponseWriter, r *http.Request) {
+	c.Respond(ctx, rw, r, []string{c.api.DefaultProduces()}, nil, errors.NotFound("not found"))
 }
 
 // Respond renders the response after doing some content negotiation
-func (c *Context) Respond(rw http.ResponseWriter, r *http.Request, produces []string, route *MatchedRoute, data interface{}) {
+func (c *Context) Respond(context context.Context, rw http.ResponseWriter, r *http.Request, produces []string, route *MatchedRoute, data interface{}) {
 	offers := []string{c.api.DefaultProduces()}
 	for _, mt := range produces {
 		if mt != c.api.DefaultProduces() {
@@ -383,7 +407,7 @@ func (c *Context) Respond(rw http.ResponseWriter, r *http.Request, produces []st
 		}
 	}
 
-	format := c.ResponseFormat(r, offers)
+	format, _ := c.ResponseFormat(context, r, offers)
 	rw.Header().Set(httpkit.HeaderContentType, format)
 
 	if resp, ok := data.(Responder); ok {

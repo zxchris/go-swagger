@@ -30,7 +30,7 @@ func specMiddleware(ctx *Context, next http.Handler) http.Handler {
 			return
 		}
 		if next == nil {
-			ctx.NotFound(rw, r)
+			ctx.NotFound(ctx.rootContext, rw, r)
 			return
 		}
 		next.ServeHTTP(rw, r)

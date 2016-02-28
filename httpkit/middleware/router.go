@@ -15,6 +15,8 @@
 package middleware
 
 import (
+	"bufio"
+	"net"
 	"net/http"
 	"regexp"
 	"strings"
@@ -27,6 +29,69 @@ import (
 	"github.com/go-swagger/go-swagger/strfmt"
 	"github.com/naoina/denco"
 )
+
+type swresponse struct {
+	writer   http.ResponseWriter
+	flusher  http.Flusher
+	notifier http.CloseNotifier
+	hijacker http.Hijacker
+	context  context.Context
+}
+
+func (r *swresponse) Header() http.Header {
+	return r.writer.Header()
+}
+
+func (r *swresponse) Write(d []byte) (int, error) {
+	return r.writer.Write(d)
+}
+
+func (r *swresponse) WriteHeader(status int) {
+	r.writer.WriteHeader(status)
+}
+
+func (r *swresponse) Flush() {
+	if r.flusher != nil {
+		r.flusher.Flush()
+	}
+}
+
+func (r *swresponse) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if r.hijacker != nil {
+		return r.hijacker.Hijack()
+	}
+	return nil, nil, errors.New(500, "not a response hijacker")
+}
+
+func (r *swresponse) CloseNotify() <-chan bool {
+	if r.notifier != nil {
+		return r.notifier.CloseNotify()
+	}
+	return nil
+}
+
+// Contexter implementers have a context defined
+type Contexter interface {
+	Context() context.Context
+}
+
+func newSwresp(c *Context, rw http.ResponseWriter) *swresponse {
+	rr := &swresponse{
+		writer:  rw,
+		context: c.rootContext,
+	}
+
+	if v, ok := rw.(http.Flusher); ok {
+		rr.flusher = v
+	}
+	if v, ok := rw.(http.CloseNotifier); ok {
+		rr.notifier = v
+	}
+	if v, ok := rw.(http.Hijacker); ok {
+		rr.hijacker = v
+	}
+	return rr
+}
 
 // RouteParam is a object to capture route params in a framework agnostic way.
 // implementations of the muxer should use these route params to communicate with the
@@ -72,17 +137,17 @@ func newRouter(ctx *Context, next http.Handler) http.Handler {
 	}
 
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-
+		swresp := newSwresp(ctx, rw)
 		// use context to lookup routes
 		if isRoot {
-			if _, ok := ctx.RouteInfo(r); ok {
+			if _, _, ok := ctx.RouteInfo(swresp.context, r); ok {
 				next.ServeHTTP(rw, r)
 				return
 			}
 		} else {
 			if p := strings.TrimPrefix(r.URL.Path, basePath); len(p) < len(r.URL.Path) {
 				r.URL.Path = p
-				if _, ok := ctx.RouteInfo(r); ok {
+				if _, _, ok := ctx.RouteInfo(swresp.context, r); ok {
 					next.ServeHTTP(rw, r)
 					return
 				}
@@ -90,11 +155,11 @@ func newRouter(ctx *Context, next http.Handler) http.Handler {
 		}
 		// Not found, check if it exists in the other methods first
 		if others := ctx.AllowedMethods(r); len(others) > 0 {
-			ctx.Respond(rw, r, ctx.spec.RequiredProduces(), nil, errors.MethodNotAllowed(r.Method, others))
+			ctx.Respond(swresp.context, rw, r, ctx.spec.RequiredProduces(), nil, errors.MethodNotAllowed(r.Method, others))
 			return
 		}
 
-		ctx.Respond(rw, r, ctx.spec.RequiredProduces(), nil, errors.NotFound("path %s was not found", r.URL.Path))
+		ctx.Respond(swresp.context, rw, r, ctx.spec.RequiredProduces(), nil, errors.NotFound("path %s was not found", r.URL.Path))
 	})
 }
 
