@@ -1,0 +1,66 @@
+swagger: '2.0'
+info:
+  version: 0.1.0
+  title: VMware Cello Resource
+  description: Author API for VMware Cello
+  termsOfService: 'https://github.com/vmware/cello/blob/master/LICENSE'
+  license:
+    name: Apache 2.0
+    url:  'https://github.com/vmware/cello/blob/master/LICENSE'
+  contact:
+    name: VMware Cello Team
+    url: 'https://github.com/vmware/cello'
+host: 'localhost:2567'
+basePath: /v1
+
+# XXX Placeholder to appease swagger generate server, replace with real API
+paths:
+  /dummy:
+    get:
+      tags:
+        - properties
+      description:
+      responses:
+        default:
+          description:
+
+definitions:
+  Property:
+    description: A property of a resource
+    discriminator: propType
+    properties:
+      name:
+        type: string
+        description: name of the property
+      computed:
+        type: boolean
+        description: is property computed
+      propType:
+        type: string
+        description: discriminating type of the property
+    required:
+      - name
+      - propType
+
+  IntProperty:
+    description: An int property of a resource
+    allOf:
+      - "$ref": "#/definitions/Property"
+      - required:
+        - value
+        properties:
+         value:
+           type: integer
+           format: int64
+           description: int value of the property
+
+  StringProperty:
+    description: A string property of a resource
+    allOf:
+      - "$ref": "#/definitions/Property"
+      - required:
+        - value
+        properties:
+         value:
+           type: string
+           description: string value of the property

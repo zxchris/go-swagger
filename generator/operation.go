@@ -370,7 +370,7 @@ func (b *codeGenOpBuilder) MakeOperation() (GenOperation, error) {
 		}
 
 		if operation.Responses.Default != nil {
-			gr, err := b.MakeResponse(receiver, b.Name+" default", false, resolver, -1, *operation.Responses.Default)
+			gr, err := b.MakeResponse(receiver, swag.ToJSONName(b.Name+" default"), false, resolver, -1, *operation.Responses.Default)
 			if err != nil {
 				return GenOperation{}, err
 			}

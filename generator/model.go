@@ -134,6 +134,7 @@ func (m *definitionGenerator) generateModel() error {
 func makeGenDefinition(name, pkg string, schema spec.Schema, specDoc *spec.Document) (*GenDefinition, error) {
 	return makeGenDefinitionHierarchy(name, pkg, "", schema, specDoc)
 }
+
 func makeGenDefinitionHierarchy(name, pkg, container string, schema spec.Schema, specDoc *spec.Document) (*GenDefinition, error) {
 	receiver := "m"
 	resolver := newTypeResolver("", specDoc)
@@ -158,6 +159,7 @@ func makeGenDefinitionHierarchy(name, pkg, container string, schema spec.Schema,
 	if err := pg.makeGenSchema(); err != nil {
 		return nil, err
 	}
+
 	dsi, ok := di.Discriminators["#/definitions/"+name]
 	if ok {
 		// when these 2 are true then the schema will render as an interface

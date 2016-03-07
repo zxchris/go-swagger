@@ -17,10 +17,14 @@ package spec
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
+
+	"gopkg.in/yaml.v2"
 
 	"github.com/go-swagger/go-swagger/jsonpointer"
 	"github.com/go-swagger/go-swagger/swag"
@@ -59,6 +63,9 @@ func (s *simpleCache) Set(uri string, data interface{}) {
 
 // ResolveRef resolves a reference against a context root
 func ResolveRef(root interface{}, ref *Ref) (*Schema, error) {
+	//if os.Getenv("DEBUG") != "" {
+	log.Println("resolving against swagger spec", ref.String())
+	//}
 	resolver, err := defaultSchemaLoader(root, nil, nil)
 	if err != nil {
 		return nil, err
@@ -68,6 +75,8 @@ func ResolveRef(root interface{}, ref *Ref) (*Schema, error) {
 	if err := resolver.Resolve(ref, result); err != nil {
 		return nil, err
 	}
+	b, _ := json.MarshalIndent(result, "", "  ")
+	log.Println("resolved", string(b))
 	return result, nil
 }
 
@@ -86,6 +95,7 @@ var schemaPtr, _ = jsonpointer.New("/$schema")
 var refPtr, _ = jsonpointer.New("/$ref")
 
 func defaultSchemaLoader(root interface{}, ref *Ref, cache ResolutionCache) (*schemaLoader, error) {
+
 	if cache == nil {
 		cache = defaultResolutionCache()
 	}
@@ -162,6 +172,7 @@ func nextRef(startingNode interface{}, startingRef *Ref, ptr *jsonpointer.Pointe
 }
 
 func (r *schemaLoader) resolveRef(currentRef, ref *Ref, node, target interface{}) error {
+	log.Printf("resolving %s from %s", ref, currentRef)
 	tgt := reflect.ValueOf(target)
 	if tgt.Kind() != reflect.Ptr {
 		return fmt.Errorf("resolve ref: target needs to be a pointer")
@@ -190,6 +201,7 @@ func (r *schemaLoader) resolveRef(currentRef, ref *Ref, node, target interface{}
 	}
 
 	if strings.HasPrefix(refURL.String(), "#") {
+		log.Printf("local ref: %q", refURL)
 		res, _, err := ref.GetPointer().Get(node)
 		if err != nil {
 			res, _, err = ref.GetPointer().Get(r.root)
@@ -210,9 +222,12 @@ func (r *schemaLoader) resolveRef(currentRef, ref *Ref, node, target interface{}
 		return nil
 	}
 
-	if refURL.Scheme != "" && refURL.Host != "" {
+	if refURL.String() != "" { //refURL.Scheme != "" && refURL.Host != "" {
 		// most definitely take the red pill
 		data, _, _, err := r.load(refURL)
+		if err != nil {
+			return err
+		}
 
 		if ((oldRef == nil && currentRef != nil) ||
 			(oldRef != nil && currentRef == nil) ||
@@ -243,24 +258,41 @@ func (r *schemaLoader) resolveRef(currentRef, ref *Ref, node, target interface{}
 }
 
 func (r *schemaLoader) load(refURL *url.URL) (interface{}, url.URL, bool, error) {
+	log.Printf("loading remote ref: %q", refURL)
 	toFetch := *refURL
 	toFetch.Fragment = ""
 
 	data, fromCache := r.cache.Get(toFetch.String())
-	if !fromCache {
-		b, err := r.loadDoc(toFetch.String())
-		if err != nil {
-			return nil, url.URL{}, false, err
-		}
+	if fromCache {
+		log.Printf("loaded from cache: %q", refURL)
+		return data, toFetch, fromCache, nil
+	}
 
-		if err := json.Unmarshal(b, &data); err != nil {
+	log.Printf("fetching remote ref: %q", toFetch.String())
+	b, err := r.loadDoc(toFetch.String())
+	if err != nil {
+		log.Println("failed:", err)
+		return nil, url.URL{}, false, err
+	}
+	log.Printf("loaded: %s", string(b))
+
+	ext := filepath.Ext(toFetch.Path)
+	if ext == "yml" || ext == "yaml" {
+		if err := yaml.Unmarshal(b, &data); err != nil {
 			return nil, url.URL{}, false, err
 		}
 		r.cache.Set(toFetch.String(), data)
+		return data, toFetch, fromCache, nil
 	}
 
+	if err := json.Unmarshal(b, &data); err != nil {
+		return nil, url.URL{}, false, err
+	}
+
+	r.cache.Set(toFetch.String(), data)
 	return data, toFetch, fromCache, nil
 }
+
 func (r *schemaLoader) Resolve(ref *Ref, target interface{}) error {
 	if err := r.resolveRef(r.currentRef, ref, r.root, target); err != nil {
 		return err

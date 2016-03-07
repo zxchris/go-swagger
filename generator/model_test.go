@@ -16,6 +16,7 @@ package generator
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -1558,6 +1559,31 @@ func TestGenModel_Issue381(t *testing.T) {
 				if assert.NoError(t, err) {
 					res := string(ct)
 					assertNotInCode(t, "m[i] != nil", res)
+				}
+			}
+		}
+	}
+}
+
+func TestGenModel_Issue331(t *testing.T) {
+	specDoc, err := spec.Load("../fixtures/bugs/331/resource-api-resources-swagger.yaml")
+	if assert.NoError(t, err) {
+		definitions := specDoc.Spec().Definitions
+		k := "ResourceSecurityGroup"
+		genModel, err := makeGenDefinition(k, "models", definitions[k], specDoc)
+		if assert.NoError(t, err) && assert.Len(t, genModel.ExtraSchemas, 2) {
+			b, _ := json.MarshalIndent(genModel, "", "  ")
+			fmt.Println(string(b))
+			buf := bytes.NewBuffer(nil)
+			err := modelTemplate.Execute(buf, genModel)
+			if assert.NoError(t, err) {
+				ct, err := formatGoFile("resource_security_group.go", buf.Bytes())
+				if assert.NoError(t, err) {
+					res := string(ct)
+					fmt.Println(res)
+					assertNotInCode(t, "m[i] != nil", res)
+				} else {
+					fmt.Println(buf.String())
 				}
 			}
 		}

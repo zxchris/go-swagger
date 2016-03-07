@@ -47,8 +47,36 @@ func JSONSpec(path string) (*Document, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	dd, err := ensureIDField(path, data)
+	if err != nil {
+		return nil, err
+	}
+
 	// convert to json
-	return New(json.RawMessage(data), "")
+	sp, err := New(dd, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return sp, nil
+}
+
+func ensureIDField(path string, data json.RawMessage) (json.RawMessage, error) {
+	var d map[string]interface{}
+	if err := json.Unmarshal(data, &d); err != nil {
+		return nil, err
+	}
+	if _, ok := d["id"]; !ok {
+		d["id"] = path
+	}
+
+	dd, err := json.Marshal(d)
+	if err != nil {
+		return nil, err
+	}
+
+	return json.RawMessage(dd), nil
 }
 
 // YAMLSpec loads a swagger spec document
@@ -58,7 +86,12 @@ func YAMLSpec(path string) (*Document, error) {
 		return nil, err
 	}
 
-	return New(data, "")
+	dd, err := ensureIDField(path, data)
+	if err != nil {
+		return nil, err
+	}
+
+	return New(dd, "")
 }
 
 // MustLoadJSONSchemaDraft04 panics when Swagger20Schema returns an error

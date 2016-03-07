@@ -1,0 +1,128 @@
+swagger: '2.0'
+info:
+  version: 0.1.0
+  title: VMware Cello Resource
+  description: Author API for VMware Cello
+  termsOfService: 'https://github.com/vmware/cello/blob/master/LICENSE'
+  license:
+    name: Apache 2.0
+    url:  'https://github.com/vmware/cello/blob/master/LICENSE'
+  contact:
+    name: VMware Cello Team
+    url: 'https://github.com/vmware/cello'
+host: 'localhost:2567'
+basePath: /v1
+
+# XXX Placeholder to appease swagger generate server, replace with real API
+paths:
+  /dummy:
+    get:
+      tags:
+        - resources
+      description:
+      responses:
+        default:
+          description:
+
+definitions:
+
+  Resource:
+    description: A resource
+    discriminator: resourceType
+    properties:
+      resourceType:
+        type: string
+        description: discriminating type of the resource
+
+      uuid:
+        type: string
+        description: uuid of the resource
+      name:
+        type: string
+        description: name of the resource
+      description:
+        type: string
+        description: name of the resource
+    required:
+      - resourceType
+      - uuid
+      - name
+      - description
+
+  ResourceVpc:
+    description: A VPC resource type
+    allOf:
+      - "$ref": "#/definitions/Resource"
+      - required:
+        - cidrBlock
+        properties:
+          cidrBlock:
+            type: string
+            description: cidr of VPC
+          id:
+            $ref: "./resource-api-properties-swagger.yaml#/definitions/StringProperty"
+            description: id of VPC
+
+  NetAccess:
+    description: A structure for representing network ingress/egress
+    properties:
+      from_port:
+        type: integer
+        description: allowed source port
+      to_port:
+        type: integer
+        description: allowed destination port
+      protocol:
+        type: string
+        description: name of the property
+      cidr_blocks:
+        type: string
+        description: subnets applied to
+    required:
+      - from_port
+      - to_port
+      - protocol
+      - cidr_blocks
+
+  ResourceSecurityGroup:
+    description: A Security Group resource type
+    allOf:
+      - "$ref": "#/definitions/Resource"
+      - required:
+          - id
+          - vpcId
+          - ingress
+          - egress
+        properties:
+          id:
+            $ref: "./resource-api-properties-swagger.yaml#/definitions/StringProperty"
+            description: id of security group
+          vpcId:
+            type: string
+            description: id of VPC
+          ingress:
+            type: array
+            items:
+              $ref: "./resource-api-net-access-swagger.yaml#/definitions/NetAccess"
+          egress:
+            type: array
+            items:
+              $ref: "./resource-api-net-access-swagger.yaml#/definitions/NetAccess"
+
+  Cell:
+    description: A Cell type
+    properties:
+      name:
+        type: string
+        description: name of the cell
+      description:
+        type: string
+        description: description of the cell
+      resources:
+        type: array
+        items:
+          $ref: "#/definitions/Resource"
+    required:
+      - resources
+      - name
+      - description

@@ -1,0 +1,47 @@
+swagger: '2.0'
+info:
+  version: 0.1.0
+  title: VMware Cello Resource
+  description: Author API for VMware Cello
+  termsOfService: 'https://github.com/vmware/cello/blob/master/LICENSE'
+  license:
+    name: Apache 2.0
+    url:  'https://github.com/vmware/cello/blob/master/LICENSE'
+  contact:
+    name: VMware Cello Team
+    url: 'https://github.com/vmware/cello'
+host: 'localhost:2567'
+basePath: /v1
+
+# XXX Placeholder to appease swagger generate server, replace with real API
+paths:
+  /dummy:
+    get:
+      tags:
+        - net-access
+      description:
+      responses:
+        default:
+          description:
+
+definitions:
+  NetAccess:
+    description: A structure for representing network ingress/egress
+    properties:
+      from_port:
+        type: integer
+        description: allowed source port
+      to_port:
+        type: integer
+        description: allowed destination port
+      protocol:
+        type: string
+        description: name of the property
+      cidr_blocks:
+        type: string
+        description: subnets applied to
+    required:
+      - from_port
+      - to_port
+      - protocol
+      - cidr_blocks
