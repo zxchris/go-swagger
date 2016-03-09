@@ -33,6 +33,10 @@ type pathItemProps struct {
 	Parameters []Parameter `json:"parameters,omitempty"`
 }
 
+type PathVersion struct {
+	Versions map[string]PathItem `json:"x-versions"`
+}
+
 // PathItem describes the operations available on a single path.
 // A Path Item may be empty, due to [ACL constraints](http://goo.gl/8us55a#securityFiltering).
 // The path itself is still exposed to the documentation viewer but they will
@@ -43,6 +47,7 @@ type PathItem struct {
 	Refable
 	VendorExtensible
 	pathItemProps
+	PathVersion
 }
 
 // JSONLookup look up a value by the json property name
@@ -62,12 +67,17 @@ func (p *PathItem) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &p.Refable); err != nil {
 		return err
 	}
+	if err := json.Unmarshal(data, &p.PathVersion); err != nil {
+		return err
+	}
 	if err := json.Unmarshal(data, &p.VendorExtensible); err != nil {
 		return err
 	}
 	if err := json.Unmarshal(data, &p.pathItemProps); err != nil {
 		return err
 	}
+	delete(p.Extensions, "x-versions")
+
 	return nil
 }
 

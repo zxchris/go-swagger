@@ -500,6 +500,23 @@ func expandPathItem(pathItem *PathItem, resolver *schemaLoader) error {
 	if err := expandOperation(pathItem.Delete, resolver); err != nil {
 		return err
 	}
+	if err := expandVersions(&pathItem.Versions, resolver); err != nil {
+		return err
+	}
+	return nil
+}
+
+func expandVersions(pv *map[string]PathItem, resolver *schemaLoader) error {
+	if pv == nil {
+		return nil
+	}
+
+	for v, pi := range *pv {
+		if err := expandPathItem(&pi, resolver); err != nil {
+			return err
+		}
+		(*pv)[v] = pi
+	}
 	return nil
 }
 
